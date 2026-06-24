@@ -1,0 +1,52 @@
+# SO-101 PickPlace env config (custom task, see rlinf/envs/maniskill/tasks/so101_pick_place.py)
+env_type: maniskill
+simulator_type: maniskill
+
+seed: 0
+total_num_envs: null    # 由主 config 覆盖
+group_size: 1
+
+auto_reset: True
+ignore_terminations: False
+max_steps_per_rollout_epoch: 400   # v3: 200 → 400, 覆盖真机 q99=308 步 + margin (~13.3s, 8 chunks)
+max_episode_steps: 400              # 必须能被 chunk_size=50 整除（360 不行 → 选 400）
+use_rel_reward: False
+# RLinf wrapper 默认 reward 硬编码了 Google/WidowX pick-place 的 info key
+# (is_src_obj_grasped / consecutive_grasp)，我们 SO101PickPlace.evaluate() 返回的
+# 是 is_grasped / cube_on_plate / success，所以走 raw：直接用 task 自身 dense reward
+reward_mode: "raw"
+use_fixed_reset_state_ids: False   # train 随机；eval 在主 yaml 里改 True
+enable_offload: False
+# wrap_obs_mode 控制 RLinf 怎么把 ManiSkill 原 obs 转成 wrapper 期望的 dict：
+#   default: 找 sensor_data["3rd_view_camera"] 当 main，不传 wrist
+#   simple : 找 sensor_data["base_camera"]    当 main，其它相机进 extra_view_images
+#   raw    : 不处理，原样返回（需要 infos["extracted_obs"]）
+# 我们用 simple 是为了同时拿 base + wrist 两路相机
+wrap_obs_mode: simple
+
+video_cfg:
+  save_video: True
+  info_on_video: True
+  video_base_dir: ${runner.logger.log_path}/video/train
+
+env:
+  eval:
+    video_cfg:
+      save_video: True
+      info_on_video: True
+      video_base_dir: ${runner.logger.log_path}/video/eval
+
+init_params:
+  id: "SO101PickPlace-v0"      # 自定义任务 id（见 tasks/so101_pick_place.py）
+  num_envs: null                # 由 ManiSkillEnv init 时填
+  obs_mode: "rgb"               # rgb / rgbd / state
+  control_mode: "pd_joint_pos"  # 与 SO101 agent 控制器一致
+  sim_backend: "gpu"
+  render_mode: "rgb_array"      # 只录 render_camera 一路，pose 复用了 base_camera 视角
+  robot_uids: "so101"
+  reward_mode: "dense"
+  sim_config:
+    sim_freq: 300
+    control_freq: 30            # = 真机 FPS
+  sensor_configs:
+    shader_pack: "default"

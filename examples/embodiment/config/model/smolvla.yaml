@@ -1,0 +1,53 @@
+# SmolVLA model config (LeRobot SmolVLA-base + PEFT LoRA RL)
+model_type: "smolvla"
+
+# Base model (HuggingFaceTB/SmolVLM2-500M-Video-Instruct + Action expert)
+model_path: "/media/zzg/GJ_disk01/pretrained_model/lerobot/smolvla_base"
+
+# PEFT LoRA adapter (your SFT ckpt)
+is_lora: True
+lora_path: "/home/zzg/workspace/pycharm/lerobot/src/outputs/train/smolvla_lora32_so101_pickplace_real_fps30_hil_v1/checkpoints/last/pretrained_model"
+train_lora_only: True
+lora_rank: 32
+lora_alpha: 8           # 与 SFT 保持一致，不要动（见 docs/notes/06 §1.0）
+
+# precision
+precision: "bf16"
+
+# action / observation
+action_dim: 6              # SO-101: 5 arm + 1 gripper
+chunk_size: 50             # 与 SFT 一致，flow_sde 内部用
+# num_action_chunks: RLinf config 校验和 env step 调度用。
+# env.train.max_steps_per_rollout_epoch 必须能被它整除。
+# 对 SmolVLA = chunk_size，整 chunk 一次喂给 env
+num_action_chunks: ${.chunk_size}
+
+# image
+img_height: 480
+img_width: 640
+num_images_in_input: 2  # top + wrist
+
+# RL head (PPO actor_critic 需要；GRPO 时把 with_value_head 设 False)
+with_value_head: False
+add_value_head: ${.with_value_head}
+# ValueHead (MLP) 结构，与 rlinf/models/embodiment/modules/value_head.py 对齐
+value_hidden_sizes: [512, 128]
+value_activation: "relu"      # ValueHead 走 kaiming_normal_，必须 relu
+chunk_critic_input: True      # critic 输入只取 suffix_out 前 chunk_size（去 pad）
+detach_critic_input: False    # critic 是否切断对 VLM/expert 的梯度
+
+# Flow matching log-prob (移植自 OpenPI pi0)
+# - flow_sde: 一步注入 Gaussian 噪声，可算 log prob；推荐用于 GRPO/PPO
+# - flow_ode: 纯确定性反推；log prob=0，仅 eval/rollout 用
+noise_method: "flow_sde"
+noise_level: 0.5          # SDE 噪声强度（0=ODE, ↑探索↑方差）
+noise_anneal: False
+noise_params: [0.7, 0.3, 400]   # anneal 时用 [start, end, steps]
+num_steps: 10             # 反推步数；SmolVLA SFT 默认 10
+ignore_last: False        # True 跳过最后一步注入噪声（数值更稳但可探索范围小）
+joint_logprob: False      # True 全部 num_steps 都参与 log prob 计算（更慢）
+safe_get_logprob: False   # True 用 -(x-mu)^2 形式（去掉常数项，更稳）
+
+# LeRobot dataset normalize key (训练 SmolVLA 时用的 dataset id)
+unnorm_key: so101_pickplace_real
+policy_setup: "so101"
